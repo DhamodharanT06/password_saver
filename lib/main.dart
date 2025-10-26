@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:top_snackbar_flutter/top_snack_bar.dart';
 import 'package:flip_card/flip_card.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
@@ -72,6 +73,10 @@ class _HomepageState extends State<Homepage> {
   List<dynamic> _filteredData = [];
   bool _showSearchBar = false;
   late Box<List> box;
+
+  // Multi-select state
+  bool _isMultiSelectMode = false;
+  Set<int> selectedIndexes = {};
 
   @override
   void initState() {
@@ -248,6 +253,28 @@ class _HomepageState extends State<Homepage> {
         color: isDark ? Colors.white12 : Color(0xFFE0F7FA),
         margin: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: ListTile(
+          leading:
+              _isMultiSelectMode
+                  ? Checkbox(
+                    value: selectedIndexes.contains(originalIndex),
+                    onChanged: (val) {
+                      setState(() {
+                        if (val == true) {
+                          selectedIndexes.add(originalIndex);
+                        } else {
+                          selectedIndexes.remove(originalIndex);
+                        }
+                      });
+                    },
+                  )
+                  : CircleAvatar(
+                    child: Text(
+                      val.toString(),
+                      style: TextStyle(
+                        color: isDark ? Colors.white70 : Colors.grey[700],
+                      ),
+                    ),
+                  ),
           title: Text(
             item["name"],
             style: TextStyle(
@@ -259,54 +286,51 @@ class _HomepageState extends State<Homepage> {
             item["other"],
             style: TextStyle(color: isDark ? Colors.grey[400] : Colors.black54),
           ),
-          leading: CircleAvatar(
-            child: Text(
-              val.toString(),
-              style: TextStyle(
-                color: isDark ? Colors.white70 : Colors.grey[700],
-              ),
-            ),
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              InkWell(
-                child: Icon(
-                  Icons.copy_rounded,
-                  color: isDark ? Colors.white : Colors.blue,
-                ),
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: item['password']));
-                  showSmallTopSnackBar(context, "Copied to clipboard");
-                },
-              ),
-              SizedBox(width: 16),
-              InkWell(
-                child: Icon(
-                  Icons.edit_outlined,
-                  color: isDark ? Colors.white : Colors.green,
-                ),
-                onTap: () {
-                  showDia(context, ind: originalIndex);
-                },
-              ),
-              SizedBox(width: 16),
-              InkWell(
-                splashColor: Colors.red,
-                child: Icon(
-                  Icons.delete_outline_outlined,
-                  color: isDark ? Colors.white : Colors.red,
-                ),
-                onTap: () {
-                  setState(() {
-                    data.removeAt(originalIndex);
-                    _saveData();
-                    _runFilter(_searchController.text);
-                  });
-                },
-              ),
-            ],
-          ),
+          trailing:
+              _isMultiSelectMode
+                  ? null
+                  : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      InkWell(
+                        child: Icon(
+                          Icons.copy_rounded,
+                          color: isDark ? Colors.white : Colors.blue,
+                        ),
+                        onTap: () {
+                          Clipboard.setData(
+                            ClipboardData(text: item['password']),
+                          );
+                          showSmallTopSnackBar(context, "Copied to clipboard");
+                        },
+                      ),
+                      SizedBox(width: 16),
+                      InkWell(
+                        child: Icon(
+                          Icons.edit_outlined,
+                          color: isDark ? Colors.white : Colors.green,
+                        ),
+                        onTap: () {
+                          showDia(context, ind: originalIndex);
+                        },
+                      ),
+                      SizedBox(width: 16),
+                      InkWell(
+                        splashColor: Colors.red,
+                        child: Icon(
+                          Icons.delete_outline_outlined,
+                          color: isDark ? Colors.white : Colors.red,
+                        ),
+                        onTap: () {
+                          setState(() {
+                            data.removeAt(originalIndex);
+                            _saveData();
+                            _runFilter(_searchController.text);
+                          });
+                        },
+                      ),
+                    ],
+                  ),
         ),
       ),
       back: Card(
@@ -326,6 +350,25 @@ class _HomepageState extends State<Homepage> {
         ),
       ),
     );
+  }
+
+  void sharePassword(dynamic item) {
+    final mapItem = Map<String, dynamic>.from(item); // cast properly
+    Share.share(
+      'App: ${mapItem["name"]}\nPassword: ${mapItem["password"]}\nOther: ${mapItem["other"]}',
+      subject: 'Password Details',
+    );
+  }
+
+  void shareMultiplePasswords(List<Map<String, dynamic>> items) {
+    if (items.isEmpty) return;
+    String content = items
+        .map((item) {
+          return 'App: ${item["name"]}\nPassword: ${item["password"]}\nOther: ${item["other"]}';
+        })
+        .join('\n\n');
+
+    Share.share(content, subject: 'Selected Passwords');
   }
 
   @override
@@ -370,6 +413,7 @@ class _HomepageState extends State<Homepage> {
                       itemBuilder: (ctx, i) => tile(i + 1),
                     ),
           ),
+          SizedBox(height: 90),
         ],
       ),
       floatingActionButton: SpeedDial(
@@ -396,6 +440,53 @@ class _HomepageState extends State<Homepage> {
             child: Icon(Icons.add),
             label: 'Add Password',
             onTap: () => showDia(context),
+          ),
+          SpeedDialChild(
+            child: Icon(Icons.select_all),
+            label: _isMultiSelectMode ? 'Cancel Multi-Select' : 'Multi-Select',
+            onTap: () {
+              setState(() {
+                _isMultiSelectMode = !_isMultiSelectMode;
+                if (!_isMultiSelectMode) selectedIndexes.clear();
+              });
+            },
+          ),
+          SpeedDialChild(
+            child: Icon(Icons.share),
+            label: 'Share Selected',
+            onTap: () {
+              if (selectedIndexes.isEmpty) return;
+
+              List<Map<String, dynamic>> itemsToShare =
+                  selectedIndexes.map((i) {
+                    final item = data[i];
+                    return Map<String, dynamic>.from(
+                      item.map((key, value) => MapEntry(key.toString(), value)),
+                    );
+                  }).toList();
+
+              shareMultiplePasswords(itemsToShare);
+            },
+          ),
+          SpeedDialChild(
+            child: Icon(Icons.delete),
+            label: 'Delete Selected',
+            onTap: () {
+              if (selectedIndexes.isEmpty) return;
+
+              // Convert Set to List and sort descending
+              List<int> indexesToDelete =
+                  selectedIndexes.toList()..sort((a, b) => b.compareTo(a));
+
+              for (int index in indexesToDelete) {
+                data.removeAt(index);
+              }
+
+              selectedIndexes.clear(); // Clear selection after delete
+              _saveData();
+              _runFilter(_searchController.text); // Update filtered list
+              setState(() {});
+            },
           ),
         ],
       ),
