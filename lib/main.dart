@@ -534,7 +534,7 @@ class _HomepageState extends State<Homepage> {
                                 ),
                                 SizedBox(width: 5),
                                 Text(
-                                  "Edit",
+                                  "Edit", 
                                   style: TextStyle(
                                     fontSize: 14,
                                     color:
