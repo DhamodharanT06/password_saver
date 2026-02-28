@@ -455,7 +455,7 @@ class _HomepageState extends State<Homepage> {
   }
 
   Widget tile(int val) {
-    final item = _filteredData[val - 1];
+    final item = _filteredData[_filteredData.length - val];
     final originalIndex = data.indexOf(item);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -767,7 +767,6 @@ class _HomepageState extends State<Homepage> {
             },
             icon: Icon(Icons.info_outline),
           ),
-          git,
         ],
         surfaceTintColor: Colors.transparent,
       ),

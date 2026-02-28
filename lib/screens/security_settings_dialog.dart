@@ -178,7 +178,7 @@ class _SecuritySettingsDialogState extends State<SecuritySettingsDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text('Cancel'),
+          child: Text('Ok'),
         ),
         // ElevatedButton(
         //   onPressed: _isPinSet ? _changePin : _setupPin,
