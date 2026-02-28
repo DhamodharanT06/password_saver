@@ -523,16 +523,14 @@ class _HomepageState extends State<Homepage> {
                     itemBuilder:
                         (context) => [
                           PopupMenuItem(
+                            onTap: () {
+                              showDia(context, ind: originalIndex);
+                            },
                             child: Row(
                               children: [
-                                InkWell(
-                                  child: Icon(
-                                    Icons.edit_outlined,
-                                    color: isDark ? Colors.white : Colors.green,
-                                  ),
-                                  onTap: () {
-                                    showDia(context, ind: originalIndex);
-                                  },
+                                Icon(
+                                  Icons.edit_outlined,
+                                  color: isDark ? Colors.white : Colors.green,
                                 ),
                                 SizedBox(width: 5),
                                 Text(
@@ -547,26 +545,23 @@ class _HomepageState extends State<Homepage> {
                             ),
                           ),
                           PopupMenuItem(
+                            onTap: () {
+                              setState(() {
+                                data.removeAt(originalIndex);
+                                _saveData();
+                                _runFilter(_searchController.text);
+                              });
+                              showSmallTopSnackBar(
+                                context,
+                                "Password deleted",
+                                Colors.green,
+                              );
+                            },
                             child: Row(
                               children: [
-                                InkWell(
-                                  splashColor: Colors.red,
-                                  child: Icon(
-                                    Icons.delete_outline_outlined,
-                                    color: isDark ? Colors.white : Colors.red,
-                                  ),
-                                  onTap: () {
-                                    setState(() {
-                                      data.removeAt(originalIndex);
-                                      _saveData();
-                                      _runFilter(_searchController.text);
-                                    });
-                                    showSmallTopSnackBar(
-                                      context,
-                                      "Password deleted",
-                                      Colors.green,
-                                    );
-                                  },
+                                Icon(
+                                  Icons.delete_outline_outlined,
+                                  color: isDark ? Colors.white : Colors.red,
                                 ),
                                 SizedBox(width: 5),
                                 Text(
