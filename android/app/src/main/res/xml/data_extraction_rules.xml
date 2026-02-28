@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sample data extraction rules file; uncomment and customize as needed.
+  See https://developer.android.com/about/versions/12/behavior-changes-12#backup-restrictions
+  for details.
+  Note: on devices running API 31+, the QUERY_ALL_PACKAGES permission
+  is required to query for any apps. Update the file accordingly.
+-->
+<data-extraction-rules>
+    <domain-config cleartextTrafficPermitted="false">
+        <!-- Disable cleartext (HTTP) traffic to all domains by default -->
+    </domain-config>
+    
+    <!-- Backup configuration: Disable automatic backup for security -->
+    <cloud-backup excludeCharacteristics="isSecure" />
+    
+    <!-- Device transfer: Block transfer of sensitive data -->
+    <device-transfer requires="isDeviceIdAttestationSupported"/>
+</data-extraction-rules>

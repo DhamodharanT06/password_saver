@@ -33,18 +33,30 @@ dependencies:
   top_snackbar_flutter:
   flip_card:
   flutter_speed_dial:
-  hive:
-  hive_flutter:
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
   share_plus: ^10.0.0
+  local_auth: ^2.2.0
+  flutter_secure_storage: ^9.2.2
+  cryptography: ^2.7.0
+  encrypt: ^5.0.3
+  path_provider:
+  intl: ^0.19.0
+  device_info_plus: ^10.1.0
+  permission_handler:
+  file_saver:
+  uuid: ^4.0.0
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
-flutter_icons:
+flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/icon/passwordappicon.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/icon/passwordappicon.png"
 
 dev_dependencies:
   flutter_launcher_icons:
