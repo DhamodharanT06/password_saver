@@ -532,7 +532,7 @@ class _HomepageState extends State<Homepage> {
                                   Icons.edit_outlined,
                                   color: isDark ? Colors.white : Colors.green,
                                 ),
-                                SizedBox(width: 5),
+                                SizedBox(width: 8),
                                 Text(
                                   "Edit", 
                                   style: TextStyle(
