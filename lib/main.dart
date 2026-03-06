@@ -575,6 +575,29 @@ class _HomepageState extends State<Homepage> {
                               ],
                             ),
                           ),
+                          PopupMenuItem(
+                            onTap: () {
+                              String shareText = 'Name: ${item["name"]}\nPassword: ${item["password"]}\nOther: ${item["other"]}';
+                              Share.share(shareText);
+                            },
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.share_outlined,
+                                  color: isDark ? Colors.white : Colors.blue,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  "Share",
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color:
+                                        isDark ? Colors.white : Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
                     icon: Icon(
                       Icons.more_vert,
