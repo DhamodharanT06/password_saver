@@ -122,10 +122,10 @@ class _LockScreenState extends State<LockScreen> {
               if (_isLoading) ...[
                 CircularProgressIndicator(color: Colors.white),
                 SizedBox(height: 12),
-                Text(
-                  'Attempt ${_biometricAttempts + 1}/$_maxBiometricAttempts',
-                  style: TextStyle(color: Colors.white70),
-                ),
+                // Text(
+                //   'Attempt ${_biometricAttempts + 1}/$_maxBiometricAttempts',
+                //   style: TextStyle(color: Colors.white70),
+                // ),
               ] else ...[
                 SizedBox(
                   width: 200,
