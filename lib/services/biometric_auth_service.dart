@@ -79,6 +79,36 @@ class BiometricAuthService {
     }
   }
 
+  /// Check if device has any secure lock (PIN, pattern, password, or biometric)
+  Future<bool> isDeviceSupported() async {
+    try {
+      return await _localAuth.isDeviceSupported();
+    } catch (e) {
+      print('Error checking device support: $e');
+      return false;
+    }
+  }
+
+  /// Authenticate with any available device lock (biometric OR PIN/pattern/password)
+  Future<bool> authenticateWithDevice() async {
+    try {
+      final isSupported = await _localAuth.isDeviceSupported();
+      if (!isSupported) return true; // No device lock configured – allow access
+
+      final authenticated = await _localAuth.authenticate(
+        localizedReason: 'Unlock Password Manager',
+        options: const AuthenticationOptions(
+          stickyAuth: true,
+          biometricOnly: false, // Allow PIN / pattern / password fallback
+        ),
+      );
+      return authenticated;
+    } on Exception catch (e) {
+      print('Device auth error: $e');
+      return false;
+    }
+  }
+
   /// Remove stored PIN
   Future<void> removePIN() async {
     try {

@@ -3,21 +3,30 @@ import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:top_snackbar_flutter/top_snack_bar.dart';
 import 'package:flip_card/flip_card.dart';
-import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'services/encryption_service.dart';
-import 'services/password_generator.dart';
 import 'services/biometric_auth_service.dart';
+import 'services/settings_service.dart';
 import 'screens/lock_screen.dart';
 import 'screens/security_settings_dialog.dart';
+import 'screens/add_edit_password_sheet.dart';
+import 'screens/password_detail_page.dart';
+import 'screens/about_page.dart';
+import 'config/admob_config.dart';
 
 late EncryptionService encryptionService;
 late BiometricAuthService biometricAuthService;
+late SettingsService settingsService;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
   await Hive.openBox<List>('passwordBox');
+
+  // Initialize AdMob
+  await MobileAds.instance.initialize();
 
   // Initialize encryption service
   encryptionService = EncryptionService();
@@ -26,6 +35,10 @@ Future<void> main() async {
   // Initialize biometric auth service
   biometricAuthService = BiometricAuthService();
   await biometricAuthService.initialize();
+
+  // Initialize settings service
+  settingsService = SettingsService();
+  await settingsService.initialize();
 
   runApp(MyApp());
 }
@@ -36,11 +49,21 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  ThemeMode _themeMode = ThemeMode.light;
+  late ThemeMode _themeMode;
+
+  @override
+  void initState() {
+    super.initState();
+    // Load saved theme preference
+    _themeMode = settingsService.getThemeMode();
+  }
+
   void toggleTheme() {
     setState(() {
       _themeMode =
           (_themeMode == ThemeMode.light) ? ThemeMode.dark : ThemeMode.light;
+      // Save theme preference
+      settingsService.setThemeMode(_themeMode);
     });
   }
 
@@ -91,11 +114,8 @@ class Homepage extends StatefulWidget {
 }
 
 class _HomepageState extends State<Homepage> {
-  final TextEditingController _name = TextEditingController();
-  final TextEditingController _password = TextEditingController();
-  final TextEditingController _other = TextEditingController();
-  final TextEditingController _category = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
 
   List<dynamic> data = [];
   List<dynamic> _filteredData = [];
@@ -111,6 +131,9 @@ class _HomepageState extends State<Homepage> {
   // Multi-select state
   bool _isMultiSelectMode = false;
   Set<int> selectedIndexes = {};
+  
+  // FAB position
+  late FloatingActionButtonLocation _fabLocation;
 
   @override
   void initState() {
@@ -121,16 +144,38 @@ class _HomepageState extends State<Homepage> {
       _runFilter(_searchController.text);
     });
     _checkSecurity();
+    _loadFabPosition();
+  }
+
+  void _loadFabPosition() {
+    setState(() {
+      _fabLocation = settingsService.getFabLocation();
+    });
   }
 
   Future<void> _checkSecurity() async {
+    // Check if security is enabled in app settings
+    final isSecurityEnabled = settingsService.isSecurityEnabled();
+    
+    if (!isSecurityEnabled) {
+      // Security is disabled, skip lock screen
+      setState(() {
+        _isPinSetup = false;
+        _isUnlocked = true;
+      });
+      return;
+    }
+
+    // Security is enabled, check device lock
     final pinSet = await widget.authService.isPINSet();
-    final deviceLock = await widget.authService.isBiometricEnabled();
+    final deviceLockEnabled = await widget.authService.isBiometricEnabled();
+    // Also show lock if the device itself has a screen lock (PIN/pattern/password/biometric)
+    final deviceProtected = await widget.authService.isDeviceSupported();
     setState(() {
-      // If device lock is enabled or PIN is set, require unlock
-      _isPinSetup = deviceLock || pinSet;
+      _isPinSetup = deviceLockEnabled || pinSet || deviceProtected;
       _isUnlocked = !_isPinSetup; // If no security, user is unlocked
     });
+    _loadFabPosition();
   }
 
   void _loadData() {
@@ -165,11 +210,16 @@ class _HomepageState extends State<Homepage> {
               return false;
             }
 
-            // Search filter
-            final name = item['name'].toString().toLowerCase();
-            final other = item['other'].toString().toLowerCase();
+            // Search filter – name, other, email, username
+            final name = item['name']?.toString().toLowerCase() ?? '';
+            final other = item['other']?.toString().toLowerCase() ?? '';
+            final email = item['email']?.toString().toLowerCase() ?? '';
+            final username = item['username']?.toString().toLowerCase() ?? '';
             final search = enteredKeyword.toLowerCase();
-            return name.contains(search) || other.contains(search);
+            return name.contains(search) ||
+                other.contains(search) ||
+                email.contains(search) ||
+                username.contains(search);
           }).toList();
     });
   }
@@ -228,248 +278,194 @@ class _HomepageState extends State<Homepage> {
     );
   }
 
-  Widget Textfie(String name, String hint, TextEditingController _conc) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(name, style: TextStyle(fontWeight: FontWeight.w700)),
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: TextField(
-            controller: _conc,
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: TextStyle(fontSize: 13),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(5),
-                borderSide: BorderSide(color: Colors.black54),
-              ),
-            ),
-          ),
-        ),
-      ],
+  // ── Password save handler ─────────────────────────────────────────────────
+  void _handleSave(Map<String, dynamic> newData, int? index) {
+    setState(() {
+      if (index != null) {
+        data[index] = newData;
+      } else {
+        data.add(newData);
+      }
+      _saveData();
+      _runFilter(_searchController.text);
+    });
+    showSmallTopSnackBar(
+      context,
+      index != null ? 'Password updated' : 'Password saved',
+      Colors.green,
     );
   }
 
-  void showDia(BuildContext context, {int? ind}) {
-    if (ind != null) {
-      _name.text = data[ind]["name"];
-      try {
-        _password.text = encryptionService.decryptPassword(
-          data[ind]["password"],
-        );
-      } catch (e) {
-        _password.text = '[Error decrypting]';
+  // ── Multiselect helpers ───────────────────────────────────────────────────
+  void _cancelMultiSelect() {
+    setState(() {
+      _isMultiSelectMode = false;
+      selectedIndexes.clear();
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      if (selectedIndexes.length == data.length) {
+        selectedIndexes.clear();
+      } else {
+        selectedIndexes = Set.from(List.generate(data.length, (i) => i));
       }
-      _other.text = data[ind]["other"];
-      _category.text = data[ind]["category"] ?? 'Other';
-    } else {
-      _name.clear();
-      _password.clear();
-      _other.clear();
-      _category.text = 'Other';
-    }
+    });
+  }
+
+  void _shareSelected() {
+    if (selectedIndexes.isEmpty) return;
+    final items = selectedIndexes.map((i) => data[i]).toList();
+    shareMultiplePasswords(items);
+  }
+
+  void _deleteSelected() {
+    if (selectedIndexes.isEmpty) return;
     showDialog(
       context: context,
-      builder: (BuildContext context) {
-        bool isDark = Theme.of(context).brightness == Brightness.dark;
-        return StatefulBuilder(
-          builder: (context, setState) {
-            int strength = _getPasswordStrength(_password.text);
-            return AlertDialog(
-              // backgroundColor: isDark ? Colors.grey.shade50 : Colors.white,
-              backgroundColor: Theme.of(context).secondaryHeaderColor,
-              title: Text(ind != null ? 'Edit Password' : 'Add Password'),
-              content: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Textfie("Title", "Enter service name", _name),
-                      SizedBox(height: 20),
-                      Textfie("Password", "Enter password", _password),
-                      // SizedBox(height: 10),
-                      // Password strength indicator (Leveller)
-                      // Row(
-                      //   children: [
-                      //     Text(
-                      //       'Strength: ',
-                      //       style: TextStyle(
-                      //         fontSize: 12,
-                      //         fontWeight: FontWeight.w500,
-                      //       ),
-                      //     ),
-                      //     Expanded(
-                      //       child: ClipRRect(
-                      //         borderRadius: BorderRadius.circular(4),
-                      //         child: LinearProgressIndicator(
-                      //           value: strength / 6,
-                      //           backgroundColor: Colors.grey[300],
-                      //           valueColor: AlwaysStoppedAnimation<Color>(
-                      //             _getStrengthColor(strength),
-                      //           ),
-                      //           minHeight: 8,
-                      //         ),
-                      //       ),
-                      //     ),
-                      //     SizedBox(width: 10),
-                      //     Text(
-                      //       _getStrengthLabel(strength),
-                      //       style: TextStyle(
-                      //         fontSize: 12,
-                      //         fontWeight: FontWeight.bold,
-                      //         color: _getStrengthColor(strength),
-                      //       ),
-                      //     ),
-                      //   ],
-                      // ),
-                      SizedBox(height: 10),
-                      // Generator and Suggestor buttons
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            FilledButton.icon(
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('Generate'),
-                              onPressed: () {
-                                final newPass = PasswordGenerator.generate();
-                                _password.text = newPass;
-                                setState(() {});
-                              },
-                              style: ButtonStyle(
-                                elevation: MaterialStateProperty.all(0),
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            FilledButton.icon(
-                              icon: const Icon(Icons.lightbulb),
-                              label: const Text('Suggest'),
-                              onPressed: () {
-                                final newPass =
-                                    PasswordGenerator.generatePassphrase();
-                                _password.text = newPass;
-                                setState(() {});
-                              },
-                              style: ButtonStyle(
-                                elevation: MaterialStateProperty.all(0),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: 20),
-                      Textfie("Email/Username", "Email or username", _other),
-                      SizedBox(height: 20),
-                      Textfie(
-                        "Category",
-                        "e.g., Email, Social, Banking",
-                        _category,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    setState(() {
-                      _name.clear();
-                      _password.clear();
-                      _other.clear();
-                      _category.text = 'Other';
-                    });
-                  },
-                  child: Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    if (_name.text.trim().isEmpty ||
-                        _password.text.trim().isEmpty ||
-                        _other.text.trim().isEmpty) {
-                      showSmallTopSnackBar(
-                        context,
-                        "All fields must be filled.",
-                        Colors.orange,
-                      );
-                      return;
-                    }
-                    Navigator.of(context).pop();
-
-                    try {
-                      String encrypted = encryptionService.encryptPassword(
-                        _password.text,
-                      );
-
-                      if (ind != null) {
-                        data[ind] = {
-                          "name": _name.text,
-                          "password": encrypted,
-                          "other": _other.text,
-                          "category":
-                              _category.text.isEmpty ? 'Other' : _category.text,
-                          "lastAccessed": data[ind]['lastAccessed'] ?? 'Never',
-                        };
-                      } else {
-                        data.add({
-                          "name": _name.text,
-                          "password": encrypted,
-                          "other": _other.text,
-                          "category":
-                              _category.text.isEmpty ? 'Other' : _category.text,
-                          "lastAccessed": 'Never',
-                        });
-                      }
-                      _saveData();
-                      _runFilter(_searchController.text);
-                      setState(() {
-                        _name.clear();
-                        _password.clear();
-                        _other.clear();
-                        _category.text = 'Other';
-                      });
-                      showSmallTopSnackBar(
-                        context,
-                        ind != null ? 'Password updated' : 'Password saved',
-                        Colors.green,
-                      );
-                    } catch (e) {
-                      showSmallTopSnackBar(
-                        context,
-                        'Encryption error: $e',
-                        Colors.red,
-                      );
-                    }
-                  },
-                  child: Text(ind != null ? 'Update' : 'Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete ${selectedIndexes.length} password(s)?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              final sorted = selectedIndexes.toList()
+                ..sort((a, b) => b.compareTo(a));
+              for (final i in sorted) {
+                data.removeAt(i);
+              }
+              selectedIndexes.clear();
+              _isMultiSelectMode = false;
+              _saveData();
+              _runFilter(_searchController.text);
+              Navigator.pop(ctx);
+              showSmallTopSnackBar(context, 'Passwords deleted', Colors.green);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget tile(int val) {
+  void _confirmDeleteOne(BuildContext ctx, int originalIndex) {
+    showDialog(
+      context: ctx,
+      builder: (dlgCtx) => AlertDialog(
+        title: const Text('Delete Password?'),
+        content: Text(
+            'Delete "${data[originalIndex]["name"]}"? This cannot be undone.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dlgCtx),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dlgCtx);
+              setState(() {
+                data.removeAt(originalIndex);
+                _saveData();
+                _runFilter(_searchController.text);
+              });
+              showSmallTopSnackBar(ctx, 'Password deleted', Colors.green);
+            },
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Category "Show All" dialog ───────────────────────────────────────────
+  void _showCategoryDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Filter by Category'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: _categories
+                .map(
+                  (cat) => RadioListTile<String>(
+                    title: Text(cat),
+                    value: cat,
+                    groupValue: _selectedCategory,
+                    onChanged: (val) {
+                      setState(() => _selectedCategory = val ?? 'All');
+                      _runFilter(_searchController.text);
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+
+  void _showAboutDialog() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const AboutPage()),
+    );
+  }
+
+  Future<void> _openPrivacyPolicy() async {
+    const String privacyUrl = 'https://dynamicdragon-passwords-privacy-policy.vercel.app/';
+    try {
+      if (await canLaunchUrl(Uri.parse(privacyUrl))) {
+        await launchUrl(Uri.parse(privacyUrl), mode: LaunchMode.externalApplication);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open privacy policy')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error opening privacy policy')),
+      );
+    }
+  }
+
+  Widget _tile(int val) {
     final item = _filteredData[_filteredData.length - val];
     final originalIndex = data.indexOf(item);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return FlipCard(
-      direction: FlipDirection.HORIZONTAL,
-      front: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        elevation: 1,
-        color: isDark ? Colors.white12 : Color(0xFFE0F7FA),
-        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-        child: ListTile(
-          leading:
-              _isMultiSelectMode
-                  ? Checkbox(
+    return GestureDetector(
+      onLongPress: () {
+        setState(() {
+          _isMultiSelectMode = true;
+          if (selectedIndexes.contains(originalIndex)) {
+            selectedIndexes.remove(originalIndex);
+          } else {
+            selectedIndexes.add(originalIndex);
+          }
+        });
+      },
+      child: FlipCard(
+        direction: FlipDirection.HORIZONTAL,
+        front: Card(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 1,
+          color: isDark ? Colors.white12 : const Color(0xFFE0F7FA),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+          child: ListTile(
+            leading: _isMultiSelectMode
+                ? Checkbox(
                     value: selectedIndexes.contains(originalIndex),
                     onChanged: (val) {
                       setState(() {
@@ -481,198 +477,199 @@ class _HomepageState extends State<Homepage> {
                       });
                     },
                   )
-                  : CircleAvatar(
+                : CircleAvatar(
                     child: Text(
-                      val.toString(),
+                      item["name"].toString().isNotEmpty
+                          ? item["name"][0].toUpperCase()
+                          : '?',
                       style: TextStyle(
                         color: isDark ? Colors.white70 : Colors.grey[700],
                       ),
                     ),
                   ),
-          title: Text(
-            item["name"],
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: isDark ? Colors.white : Colors.black87,
-            ),
-          ),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                item["other"],
-                style: TextStyle(
-                  color: isDark ? Colors.grey[400] : Colors.black54,
-                  fontSize: 11,
-                ),
+            title: Text(
+              item["name"],
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white : Colors.black87,
               ),
-              Text(
-                'Category: ${item['category'] ?? 'Other'} \nLast: ${item['lastAccessed'] ?? 'Never'}',
-                style: TextStyle(
-                  color: isDark ? Colors.grey[500] : Colors.grey,
-                  fontSize: 10,
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item["email"] ?? item["other"] ?? '',
+                  style: TextStyle(
+                    color: isDark ? Colors.grey[400] : Colors.black54,
+                    fontSize: 11,
+                  ),
+                ),
+                Text(
+                  'Category: ${item['category'] ?? 'Other'} '
+                  '\nLast: ${item['lastAccessed'] ?? 'Never'}',
+                  style: TextStyle(
+                    color: isDark ? Colors.grey[500] : Colors.grey,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+            trailing: _isMultiSelectMode
+                ? null
+                : PopupMenuButton(
+                    color: isDark ? Colors.grey[800] : Colors.white,
+                    itemBuilder: (ctx) => [
+                      // View Details
+                      PopupMenuItem(
+                        onTap: () async {
+                          await Future.delayed(Duration.zero);
+                          if (!mounted) return;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PasswordDetailPage(
+                                entry: Map<String, dynamic>.from(item),
+                                index: originalIndex,
+                                encryptionService: encryptionService,
+                                onEdit: (d, idx) => _handleSave(d, idx),
+                                onDelete: (idx) {
+                                  setState(() {
+                                    data.removeAt(idx);
+                                    _saveData();
+                                    _runFilter(_searchController.text);
+                                  });
+                                  showSmallTopSnackBar(context,
+                                      'Password deleted', Colors.green);
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                        child: _menuRow(Icons.info_outline, 'View Details',
+                            isDark ? Colors.white : Colors.blue, isDark),
+                      ),
+                      // Edit
+                      PopupMenuItem(
+                        onTap: () async {
+                          await Future.delayed(Duration.zero);
+                          if (!mounted) return;
+                          AddEditPasswordSheet.show(
+                            context,
+                            existingEntry: Map<String, dynamic>.from(item),
+                            existingIndex: originalIndex,
+                            encryptionService: encryptionService,
+                            onSave: _handleSave,
+                          );
+                        },
+                        child: _menuRow(Icons.edit_outlined, 'Edit',
+                            isDark ? Colors.white : Colors.green, isDark),
+                      ),
+                      // Delete (with confirmation)
+                      PopupMenuItem(
+                        onTap: () async {
+                          await Future.delayed(Duration.zero);
+                          if (!mounted) return;
+                          _confirmDeleteOne(context, originalIndex);
+                        },
+                        child: _menuRow(
+                            Icons.delete_outline_outlined,
+                            'Delete',
+                            isDark ? Colors.white : Colors.red,
+                            isDark),
+                      ),
+                      // Share
+                      PopupMenuItem(
+                        onTap: () {
+                          final pw = encryptionService
+                              .decryptPassword(item['password']);
+                          String shareText =
+                              'Name: ${item["name"]}\nPassword: $pw'
+                              '\nEmail: ${item["email"] ?? item["other"]}';
+                          if ((item["username"] ?? '').isNotEmpty) {
+                            shareText += '\nUsername: ${item["username"]}';
+                          }
+                          Share.share(shareText);
+                        },
+                        child: _menuRow(Icons.share_outlined, 'Share',
+                            isDark ? Colors.white : Colors.blue, isDark),
+                      ),
+                    ],
+                    icon: Icon(Icons.more_vert,
+                        color: isDark ? Colors.white : Colors.black54),
+                  ),
+          ),
+        ),
+        back: Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          color: Theme.of(context).cardColor,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+          elevation: 1,
+          child: Row(
+            children: [
+              Container(
+                height: 80,
+                width: MediaQuery.of(context).size.width * 0.65,
+                alignment: Alignment.center,
+                child: _buildPasswordDisplay(item, isDark),
+              ),
+              const Spacer(),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    height: 60,
+                    width: MediaQuery.of(context).size.width * 0.25 - 32,
+                    decoration: BoxDecoration(
+                      color:
+                          isDark ? Colors.grey : Colors.blue.withAlpha(50),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(Icons.copy_rounded,
+                        color: isDark ? Colors.white : Colors.blue),
+                  ),
+                  onTap: () {
+                    try {
+                      final password = encryptionService
+                          .decryptPassword(item['password']);
+                      Clipboard.setData(ClipboardData(text: password));
+                      item['lastAccessed'] =
+                          DateTime.now().toString().split('.')[0];
+                      _saveData();
+                      _runFilter(_searchController.text);
+                      showSmallTopSnackBar(
+                          context, 'Copied to clipboard', Colors.green);
+                    } catch (e) {
+                      showSmallTopSnackBar(
+                          context, 'Error decrypting password', Colors.red);
+                    }
+                  },
                 ),
               ),
             ],
           ),
-          trailing:
-              _isMultiSelectMode
-                  ? null
-                  : PopupMenuButton(
-                    color: isDark ? Colors.grey[800] : Colors.white,
-                    itemBuilder:
-                        (context) => [
-                          PopupMenuItem(
-                            onTap: () {
-                              showDia(context, ind: originalIndex);
-                            },
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.edit_outlined,
-                                  color: isDark ? Colors.white : Colors.green,
-                                ),
-                                SizedBox(width: 8),
-                                Text(
-                                  "Edit", 
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color:
-                                        isDark ? Colors.white : Colors.black87,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            onTap: () {
-                              setState(() {
-                                data.removeAt(originalIndex);
-                                _saveData();
-                                _runFilter(_searchController.text);
-                              });
-                              showSmallTopSnackBar(
-                                context,
-                                "Password deleted",
-                                Colors.green,
-                              );
-                            },
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.delete_outline_outlined,
-                                  color: isDark ? Colors.white : Colors.red,
-                                ),
-                                SizedBox(width: 5),
-                                Text(
-                                  "Delete",
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color:
-                                        isDark ? Colors.white : Colors.black87,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            onTap: () {
-                              String shareText = 'Name: ${item["name"]}\nPassword: ${item["password"]}\nOther: ${item["other"]}';
-                              Share.share(shareText);
-                            },
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.share_outlined,
-                                  color: isDark ? Colors.white : Colors.blue,
-                                ),
-                                SizedBox(width: 8),
-                                Text(
-                                  "Share",
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color:
-                                        isDark ? Colors.white : Colors.black87,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                    icon: Icon(
-                      Icons.more_vert,
-                      color: isDark ? Colors.white : Colors.black54,
-                    ),
-                  ),
-        ),
-      ),
-      back: Card(
-        margin: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        color: Theme.of(context).cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        elevation: 1,
-        child: Row(
-          children: [
-            Container(
-              height: 80,
-              width: MediaQuery.of(context).size.width * 0.65,
-              alignment: Alignment.center,
-              child: _buildPasswordDisplay(item, isDark),
-            ),
-            // SizedBox(width: 8),
-            Spacer(),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: InkWell(
-                child: Container(
-                  height: 60,
-                  width: MediaQuery.of(context).size.width * 0.25 - 32,
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.grey : Colors.blue.withAlpha(50),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.copy_rounded,
-                    color: isDark ? Colors.white : Colors.blue,
-                  ),
-                ),
-                onTap: () {
-                  try {
-                    var password = encryptionService.decryptPassword(
-                      item['password'],
-                    );
-                    Clipboard.setData(ClipboardData(text: password));
-                    // Update last accessed
-                    item['lastAccessed'] =
-                        DateTime.now().toString().split('.')[0];
-                    _saveData();
-                    _runFilter(_searchController.text);
-                    showSmallTopSnackBar(
-                      context,
-                      "Copied to clipboard",
-                      Colors.green,
-                    );
-                  } catch (e) {
-                    showSmallTopSnackBar(
-                      context,
-                      "Error decrypting password",
-                      Colors.red,
-                    );
-                  }
-                },
-              ),
-            ),
-            // Positioned(
-            //   top: 0,
-            //   bottom: 0,
-            //   right: 8,
-            //   child:
-            // ),
-          ],
         ),
       ),
     );
   }
+
+  Widget _menuRow(
+      IconData icon, String label, Color iconColor, bool isDark) {
+    return Row(
+      children: [
+        Icon(icon, color: iconColor),
+        const SizedBox(width: 8),
+        Text(label,
+            style: TextStyle(
+                fontSize: 14,
+                color: isDark ? Colors.white : Colors.black87)),
+      ],
+    );
+  }
+
+  // Placeholder - old tile method body removed (now integrated into _tile above)
+  Widget _tile_placeholder_REMOVED() => const SizedBox.shrink();
 
   Widget _buildPasswordDisplay(dynamic item, bool isDark) {
     try {
@@ -702,281 +699,472 @@ class _HomepageState extends State<Homepage> {
 
   void shareMultiplePasswords(List<dynamic> items) {
     if (items.isEmpty) return;
-    String content = items
-        .map((item) {
-          try {
-            var password = encryptionService.decryptPassword(item['password']);
-            return 'Service: ${item["name"]}\nUsername: ${item["other"]}\nCategory: ${item['category'] ?? 'Other'}\nPassword: $password';
-          } catch (e) {
-            return 'Service: ${item["name"]}\nUsername: ${item["other"]}\nPassword: [Error]';
-          }
-        })
-        .join('\n\n');
-
+    final content = items.map((item) {
+      try {
+        final pw = encryptionService.decryptPassword(item['password']);
+        final email = item['email'] ?? item['other'] ?? '';
+        final username = item['username'] ?? '';
+        final category = item['category'] ?? 'Other';
+        String text =
+            'Service: ${item["name"]}\nEmail: $email\n'
+            'Category: $category\nPassword: $pw';
+        if (username.isNotEmpty) {
+          text += '\nUsername: $username';
+        }
+        return text;
+      } catch (e) {
+        return 'Service: ${item["name"]}\nPassword: [Error]';
+      }
+    }).join('\n\n');
     Share.share(content, subject: 'Selected Passwords');
   }
 
   void _showSecuritySettings(BuildContext context) {
     showDialog(
       context: context,
-      builder:
-          (context) => SecuritySettingsDialog(
-            authService: widget.authService,
-            onSettingsChanged: () {
-              _checkSecurity();
-            },
-          ),
+      builder: (context) => SecuritySettingsDialog(
+        authService: widget.authService,
+        settingsService: settingsService,
+        onSettingsChanged: _checkSecurity,
+      ),
+    );
+  }
+
+  void _showFabPositionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (ctx, setState) {
+          String currentPosition = settingsService.getFabPosition();
+          return AlertDialog(
+            title: const Text('Add Button Position'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                RadioListTile<String>(
+                  title: const Text('Bottom-Right (Default)'),
+                  value: 'bottom-right',
+                  groupValue: currentPosition,
+                  onChanged: (String? value) {
+                    if (value != null) {
+                      settingsService.setFabPosition(value);
+                      setState(() => currentPosition = value);
+                      _loadFabPosition();
+                      Navigator.pop(ctx);
+                    }
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Bottom-Left'),
+                  value: 'bottom-left',
+                  groupValue: currentPosition,
+                  onChanged: (String? value) {
+                    if (value != null) {
+                      settingsService.setFabPosition(value);
+                      setState(() => currentPosition = value);
+                      _loadFabPosition();
+                      Navigator.pop(ctx);
+                    }
+                  },
+                ),
+                RadioListTile<String>(
+                  title: const Text('Center-Bottom'),
+                  value: 'center-bottom',
+                  groupValue: currentPosition,
+                  onChanged: (String? value) {
+                    if (value != null) {
+                      settingsService.setFabPosition(value);
+                      setState(() => currentPosition = value);
+                      _loadFabPosition();
+                      Navigator.pop(ctx);
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
   @override
   void dispose() {
-    _name.dispose();
-    _password.dispose();
-    _other.dispose();
-    _category.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Show lock screen if not unlocked and PIN is set
+    // Show lock screen if not unlocked and security is set up
     if (!_isUnlocked && _isPinSetup) {
       return LockScreen(
         authService: widget.authService,
-        onUnlocked: () {
-          setState(() => _isUnlocked = true);
-        },
+        onUnlocked: () => setState(() => _isUnlocked = true),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text("Passwords", style: TextStyle(fontWeight: FontWeight.bold)),
-        centerTitle: true,
-        leading: Center(child: Text(_filteredData.length.toString())),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.brightness_6),
-            onPressed: widget.toggleTheme,
-          ),
-          IconButton(
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder:
-                    (context) => AlertDialog(
-                      backgroundColor: Theme.of(context).secondaryHeaderColor,
-                      title: Text('About Passwords'),
-                      content: Text(
-                        'Passwords is a simple yet powerful password manager. It allows you to securely store and manage your passwords with features like encryption, biometric auth, password generation, and more. Your data is stored locally on your device, ensuring privacy and security.',
-                        style: TextStyle(wordSpacing: 2),
-                        // textAlign: TextAlign.center,
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: Text('Close'),
-                        ),
-                      ],
-                    ),
-              );
-            },
-            icon: Icon(Icons.info_outline),
-          ),
-        ],
-        surfaceTintColor: Colors.transparent,
-      ),
+      key: _scaffoldKey,
+      appBar: _buildAppBar(),
+      endDrawer: _buildEndDrawer(),
       body: Column(
         children: [
-          // Category filter row
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Wrap(
-                spacing: 10,
-                children:
-                    _categories.map((cat) {
-                      final isSelected = _selectedCategory == cat;
-                      return FilterChip(
-                        backgroundColor: Theme.of(
-                          context,
-                        ).appBarTheme.backgroundColor!.withAlpha(100),
-                        label: Text(cat),
-                        selected: isSelected,
-                        selectedColor:
-                            Theme.of(context).appBarTheme.backgroundColor,
-                        onSelected: (selected) {
-                          setState(() {
-                            _selectedCategory = cat;
-                          });
-                          _runFilter(_searchController.text);
-                        },
-                      );
-                    }).toList(),
-              ),
-            ),
-          ),
-          if (_showSearchBar)
-            Padding(
-              padding: EdgeInsets.all(8),
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  labelText: 'Search',
-                  prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-          Expanded(
-            child:
-                _filteredData.isEmpty
-                    ? Center(
-                      child: Text(
-                        "No entries found",
-                        textAlign: TextAlign.center,
-                      ),
-                    )
-                    : ListView.builder(
-                      itemCount: _filteredData.length,
-                      itemBuilder: (ctx, i) => tile((i + 1)),
-                    ),
-          ),
-          SizedBox(height: 90),
-          // SizedBox(height: MediaQuery.of(context).size.height * 0.115),
+          if (_isMultiSelectMode)
+            _buildMultiSelectBar()
+          else ...[
+            _buildCategoryFilterRow(),
+            if (_showSearchBar) _buildSearchBar(),
+          ],
+          Expanded(child: _buildList()),
         ],
       ),
-      floatingActionButton: SpeedDial(
-        label: Text("Menu"),
-        icon: Icons.menu,
-        activeIcon: Icons.close,
-        backgroundColor:
-            Theme.of(context).floatingActionButtonTheme.backgroundColor,
-        // animationAngle: 270,
-        elevation: 8,
-        overlayColor: Colors.black,
-        overlayOpacity: 0.3,
-        spacing: 16,
-        spaceBetweenChildren: 8,
-        animationDuration: Duration(milliseconds: 100),
-        curve: Curves.slowMiddle,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => AddEditPasswordSheet.show(
+          context,
+          encryptionService: encryptionService,
+          onSave: _handleSave,
+        ),
+        child: const Icon(Icons.add),
+      ),
+      floatingActionButtonLocation: _fabLocation,
+      bottomNavigationBar: const _BannerAdWidget(),
+    );
+  }
+
+  // ── AppBar ────────────────────────────────────────────────────────────────
+  AppBar _buildAppBar() {
+    return AppBar(
+      title: const Text('Passwords',
+          style: TextStyle(fontWeight: FontWeight.bold)),
+      // centerTitle: true,
+      // leading: Center(
+      //   child: Text(
+      //     _filteredData.length.toString(),
+      //     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      //   ),
+      // ),
+      actions: [
+        IconButton(
+          icon: Icon(_showSearchBar ? Icons.search_off : Icons.search),
+          tooltip: _showSearchBar ? 'Close search' : 'Search',
+          onPressed: () {
+            setState(() {
+              _showSearchBar = !_showSearchBar;
+              if (!_showSearchBar) {
+                _searchController.clear();
+                _runFilter('');
+              }
+            });
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.menu),
+          tooltip: 'Menu',
+          onPressed: () => _scaffoldKey.currentState?.openEndDrawer(),
+        ),
+      ],
+      surfaceTintColor: Colors.transparent,
+    );
+  }
+
+  // ── Right Drawer ──────────────────────────────────────────────────────────
+  Widget _buildEndDrawer() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final headerBg = isDark ? Colors.teal[700]! : Colors.tealAccent[400]!;
+
+    return Drawer(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SpeedDialChild(
-            child: Icon(Icons.security),
-            label: 'Security Settings',
-            onTap: () => _showSecuritySettings(context),
+          // Header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+            color: headerBg,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.lock, size: 40, color: Colors.black87),
+                const SizedBox(height: 10),
+                const Text('Password Manager',
+                    style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87)),
+                const SizedBox(height: 4),
+                Text(
+                  '${data.length} password${data.length != 1 ? "s" : ""} saved',
+                  style: const TextStyle(fontSize: 13, color: Colors.black54),
+                ),
+              ],
+            ),
           ),
-          SpeedDialChild(
-            child: Icon(Icons.search),
-            label: 'Search',
-            onTap: () => setState(() => _showSearchBar = !_showSearchBar),
-          ),
-          SpeedDialChild(
-            child: Icon(Icons.add),
-            label: 'Add Password',
-            onTap: () => showDia(context),
-          ),
-          SpeedDialChild(
-            child: Icon(Icons.select_all),
-            label: _isMultiSelectMode ? 'Cancel Multi-Select' : 'Multi-Select',
+          const SizedBox(height: 8),
+          ListTile(
+            leading: const Icon(Icons.brightness_6),
+            title: const Text('Toggle Theme'),
             onTap: () {
+              Navigator.pop(context);
+              widget.toggleTheme();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.security),
+            title: const Text('Security Settings'),
+            onTap: () {
+              Navigator.pop(context);
+              _showSecuritySettings(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.add_location),
+            title: const Text('Add Button Position'),
+            onTap: () {
+              Navigator.pop(context);
+              _showFabPositionDialog();
+            },
+          ),
+          ListTile(
+            leading: Icon(_isMultiSelectMode ? Icons.done_all : Icons.select_all),
+            title: Text(_isMultiSelectMode ? 'Exit Multi-Select' : 'Multi-Select'),
+            onTap: () {
+              Navigator.pop(context);
               setState(() {
                 _isMultiSelectMode = !_isMultiSelectMode;
                 if (!_isMultiSelectMode) selectedIndexes.clear();
               });
             },
           ),
-          if (_isMultiSelectMode)
-            SpeedDialChild(
-              child: Icon(
-                selectedIndexes.length == data.length
-                    ? Icons.deselect
-                    : Icons.select_all,
-              ),
-              label:
-                  selectedIndexes.length == data.length
-                      ? 'Deselect All'
-                      : 'Select All',
-              onTap: () {
-                setState(() {
-                  if (selectedIndexes.length == data.length) {
-                    // Deselect all
-                    selectedIndexes.clear();
-                  } else {
-                    // Select all
-                    selectedIndexes.clear();
-                    for (int i = 0; i < data.length; i++) {
-                      selectedIndexes.add(i);
-                    }
-                  }
-                });
-              },
-            ),
-          if (_isMultiSelectMode && selectedIndexes.isNotEmpty)
-            SpeedDialChild(
-              child: Icon(Icons.share),
-              label: 'Share Selected',
-              onTap: () {
-                if (selectedIndexes.isEmpty) return;
-                List<dynamic> itemsToShare =
-                    selectedIndexes.map((i) => data[i]).toList();
-                shareMultiplePasswords(itemsToShare);
-              },
-            ),
-          if (_isMultiSelectMode && selectedIndexes.isNotEmpty)
-            SpeedDialChild(
-              child: Icon(Icons.delete, color: Colors.red),
-              label: 'Delete Selected',
-              onTap: () {
-                if (selectedIndexes.isEmpty) return;
-
-                showDialog(
-                  context: context,
-                  builder:
-                      (context) => AlertDialog(
-                        title: Text(
-                          'Delete ${selectedIndexes.length} password(s)?',
-                        ),
-                        content: Text('This action cannot be undone.'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: Text('Cancel'),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              // Sort descending to avoid index issues
-                              final indexesToDelete =
-                                  selectedIndexes.toList()
-                                    ..sort((a, b) => b.compareTo(a));
-                              for (int idx in indexesToDelete) {
-                                data.removeAt(idx);
-                              }
-                              selectedIndexes.clear();
-                              _saveData();
-                              _runFilter(_searchController.text);
-                              Navigator.pop(context);
-                              showSmallTopSnackBar(
-                                context,
-                                "Passwords deleted",
-                                Colors.green,
-                              );
-                            },
-                            child: Text(
-                              'Delete',
-                              style: TextStyle(color: Colors.red),
-                            ),
-                          ),
-                        ],
-                      ),
-                );
-              },
-            ),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('About'),
+            onTap: () {
+              Navigator.pop(context);
+              _showAboutDialog();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.privacy_tip),
+            title: const Text('Privacy Policy'),
+            onTap: () {
+              Navigator.pop(context);
+              _openPrivacyPolicy();
+            },
+          ),
         ],
       ),
+    );
+  }
+
+  // ── Multiselect action bar ────────────────────────────────────────────────
+  Widget _buildMultiSelectBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = isDark ? Colors.teal[800]! : Colors.tealAccent[100]!;
+
+    return Container(
+      color: bg,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Cancel selection',
+            onPressed: _cancelMultiSelect,
+          ),
+          Text(
+            '${selectedIndexes.length} selected',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const Spacer(),
+          IconButton(
+            icon: Icon(selectedIndexes.length == data.length
+                ? Icons.deselect
+                : Icons.select_all),
+            tooltip: selectedIndexes.length == data.length
+                ? 'Deselect all'
+                : 'Select all',
+            onPressed: _selectAll,
+          ),
+          if (selectedIndexes.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.share_outlined),
+              tooltip: 'Share selected',
+              onPressed: _shareSelected,
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              tooltip: 'Delete selected',
+              onPressed: _deleteSelected,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ── Search bar ────────────────────────────────────────────────────────────
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+      child: TextField(
+        controller: _searchController,
+        autofocus: true,
+        decoration: InputDecoration(
+          hintText: 'Search by name, email, username...',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Close search',
+            onPressed: () {
+              setState(() {
+                _showSearchBar = false;
+                _searchController.clear();
+                _runFilter('');
+              });
+            },
+          ),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12)),
+          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+        ),
+      ),
+    );
+  }
+
+  // ── Category filter row ───────────────────────────────────────────────────
+  Widget _buildCategoryFilterRow() {
+    const int maxVisible = 4; // All + selected + 2 others
+    final catList = _categories.toList();
+    
+    // Build visible list: Always show "All" and selected category first
+    final visible = <String>['All'];
+    if (_selectedCategory != 'All' && !visible.contains(_selectedCategory)) {
+      visible.add(_selectedCategory);
+    }
+    
+    // Add remaining categories up to maxVisible
+    for (final cat in catList) {
+      if (!visible.contains(cat) && visible.length < maxVisible) {
+        visible.add(cat);
+      }
+    }
+    
+    final hiddenCount = catList.length - visible.length + 1; // +1 for "All"
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+        child: Row(
+          children: [
+            ...visible.map((cat) {
+              final isSelected = _selectedCategory == cat;
+              return Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: FilterChip(
+                  label: Text(cat),
+                  selected: isSelected,
+                  backgroundColor: Theme.of(context)
+                      .appBarTheme
+                      .backgroundColor!
+                      .withAlpha(100),
+                  selectedColor:
+                      Theme.of(context).appBarTheme.backgroundColor,
+                  onSelected: (_) {
+                    setState(() => _selectedCategory = cat);
+                    _runFilter(_searchController.text);
+                  },
+                ),
+              );
+            }),
+            if (hiddenCount > 0)
+              ActionChip(
+                label: Text('+${hiddenCount-1} more'),
+                onPressed: _showCategoryDialog,
+                backgroundColor: Theme.of(context).appBarTheme.backgroundColor!.withAlpha(10),
+              ),
+            if (_selectedCategory != 'All')
+              Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: ActionChip(
+                  label: const Text('Clear'),
+                  avatar: const Icon(Icons.close, size: 14),
+                  onPressed: () {
+                    setState(() => _selectedCategory = 'All');
+                    _runFilter(_searchController.text);
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Password list ─────────────────────────────────────────────────────────
+  Widget _buildList() {
+    if (_filteredData.isEmpty) {
+      return const Center(
+          child: Text('No entries found', textAlign: TextAlign.center));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 20),
+      itemCount: _filteredData.length,
+      itemBuilder: (ctx, i) => _tile(i + 1),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Banner Ad Widget
+// ─────────────────────────────────────────────────────────────────────────────
+class _BannerAdWidget extends StatefulWidget {
+  const _BannerAdWidget();
+
+  @override
+  State<_BannerAdWidget> createState() => __BannerAdWidgetState();
+}
+
+class __BannerAdWidgetState extends State<_BannerAdWidget> {
+  BannerAd? _ad;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ad = BannerAd(
+      adUnitId: AdmobConfig.bannerAdUnitId,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (_) {
+          if (mounted) setState(() => _loaded = true);
+        },
+        onAdFailedToLoad: (ad, _) => ad.dispose(),
+      ),
+    )..load();
+  }
+
+  @override
+  void dispose() {
+    _ad?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded || _ad == null) return const SizedBox(height: 50);
+    return SizedBox(
+      height: _ad!.size.height.toDouble(),
+      width: double.infinity,
+      child: AdWidget(ad: _ad!),
     );
   }
 }

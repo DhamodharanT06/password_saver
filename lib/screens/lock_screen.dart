@@ -18,9 +18,7 @@ class LockScreen extends StatefulWidget {
 class _LockScreenState extends State<LockScreen> {
   String _errorMessage = '';
   bool _isLoading = false;
-  bool _canUseBiometric = false;
-  int _biometricAttempts = 0;
-  final int _maxBiometricAttempts = 3;
+  bool _canUseDeviceLock = false;
 
   @override
   void initState() {
@@ -30,59 +28,46 @@ class _LockScreenState extends State<LockScreen> {
 
   Future<void> _initializeAuth() async {
     try {
-      final hasBio = await widget.authService.canUseBiometric();
-      final bioEnabled = await widget.authService.isBiometricEnabled();
-
+      final deviceSupported = await widget.authService.isDeviceSupported();
       setState(() {
-        _canUseBiometric = hasBio && bioEnabled;
+        _canUseDeviceLock = deviceSupported;
       });
 
-      // Auto-attempt biometric if available (with small delay)
-      if (_canUseBiometric) {
-        Future.delayed(Duration(milliseconds: 500), () {
-          _attemptBiometric();
+      // Auto-attempt if device has any lock (biometric, PIN, pattern, password)
+      if (_canUseDeviceLock) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _attemptAuth();
         });
       }
     } catch (e) {
       print('Error initializing lock screen: $e');
-      // If biometric fails to initialize, mark unavailable
       setState(() {
-        _canUseBiometric = false;
+        _canUseDeviceLock = false;
       });
     }
   }
 
-  Future<void> _attemptBiometric() async {
+  Future<void> _attemptAuth() async {
     setState(() => _isLoading = true);
     try {
-      final authenticated = await widget.authService.authenticateWithBiometric(
-        allowDeviceCredential: true,
-      );
+      final authenticated = await widget.authService.authenticateWithDevice();
       if (authenticated) {
         if (mounted) widget.onUnlocked();
         return;
-      } else {
-        _biometricAttempts++;
       }
     } catch (e) {
-      print('Biometric error: $e');
-      _biometricAttempts++;
+      print('Auth error: $e');
     }
 
-    if (_biometricAttempts >= _maxBiometricAttempts) {
-      // Max attempts reached - stop auto-retrying
-      if (mounted)
-        setState(() {
-          _isLoading = false;
-          _errorMessage =
-              'Authentication failed. Please use device lock to unlock.';
-        });
-    } else {
-      if (mounted) setState(() => _isLoading = false);
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Authentication failed. Please try again.';
+      });
     }
   }
 
-  // PIN and in-app PIN fallback removed - app relies solely on device lock
+  // App relies on device lock (PIN / pattern / password / biometric)
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +98,7 @@ class _LockScreenState extends State<LockScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                 child: Text(
-                  'Authenticate using your device lock\n(PIN - Pattern - Password - Biometric)',
+                  'Authenticate using your device lock\n(PIN / Pattern / Password / Biometric)',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white70, fontSize: 13),
                 ),
@@ -131,7 +116,7 @@ class _LockScreenState extends State<LockScreen> {
                   width: 200,
                   height: 52,
                   child: ElevatedButton.icon(
-                    onPressed: _attemptBiometric,
+                    onPressed: _attemptAuth,
                     icon: Icon(Icons.fingerprint, size: 20),
                     label: Text('Use Device Lock'),
                     style: ElevatedButton.styleFrom(
@@ -156,7 +141,7 @@ class _LockScreenState extends State<LockScreen> {
                 ),
                 SizedBox(height: 12),
                 TextButton(
-                  onPressed: _attemptBiometric,
+                  onPressed: _attemptAuth,
                   child: Text('Retry', style: TextStyle(color: Colors.white70)),
                 ),
               ],

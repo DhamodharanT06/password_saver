@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import '../services/biometric_auth_service.dart';
+import '../services/settings_service.dart';
 
 class SecuritySettingsDialog extends StatefulWidget {
   final BiometricAuthService authService;
+  final SettingsService settingsService;
   final VoidCallback onSettingsChanged;
 
   const SecuritySettingsDialog({
     super.key,
     required this.authService,
+    required this.settingsService,
     required this.onSettingsChanged,
   });
 
@@ -16,13 +19,7 @@ class SecuritySettingsDialog extends StatefulWidget {
 }
 
 class _SecuritySettingsDialogState extends State<SecuritySettingsDialog> {
-  String _newPin = '';
-  String _confirmPin = '';
-  bool _biometricEnabled = false;
-  bool _canUseBiometric = false;
-  bool _isPinSet = false;
-  String _errorMessage = '';
-  String _successMessage = '';
+  bool _securityEnabled = true;
 
   @override
   void initState() {
@@ -31,14 +28,8 @@ class _SecuritySettingsDialogState extends State<SecuritySettingsDialog> {
   }
 
   Future<void> _initializeSettings() async {
-    final hasBio = await widget.authService.canUseBiometric();
-    final bioEnabled = await widget.authService.isBiometricEnabled();
-    final pinSet = await widget.authService.isPINSet();
-
     setState(() {
-      _canUseBiometric = hasBio;
-      _biometricEnabled = bioEnabled;
-      _isPinSet = pinSet;
+      _securityEnabled = widget.settingsService.isSecurityEnabled();
     });
   }
 
@@ -137,48 +128,81 @@ class _SecuritySettingsDialogState extends State<SecuritySettingsDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('Security Settings'),
-      content: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Divider(),
-            SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    'Use device lock\n(PIN or Biometric)',
-                    style: TextStyle(fontSize: 14),
-                  ),
+      title: const Text('Security Settings'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'App Authentication',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Require authentication on app startup',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.grey[400]
+                            : Colors.grey,
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(width: 1.5),
-                Switch(
-                  value: _biometricEnabled,
-                  onChanged: (value) async {
-                    // If enabling device lock, remove local PIN to rely on device credential
-                    setState(() => _biometricEnabled = value);
-                    await widget.authService.setBiometricEnabled(value);
-                    if (value) {
-                      // remove any app-specific PIN
-                      await widget.authService.resetPIN();
-                      setState(() {
-                        _isPinSet = false;
-                      });
+              ),
+              Switch(
+                value: _securityEnabled,
+                onChanged: (value) async {
+                  // Require authentication before changing security setting
+                  try {
+                    final isAuthenticated = await widget.authService.authenticateWithBiometric();
+                    if (isAuthenticated) {
+                      setState(() => _securityEnabled = value);
+                      await widget.settingsService.setSecurityEnabled(value);
+                      widget.onSettingsChanged();
                     }
-                    widget.onSettingsChanged();
-                  },
-                ),
-              ],
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Authentication failed')),
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.withAlpha(20),
+              borderRadius: BorderRadius.circular(8),
             ),
-            SizedBox(height: 12),
-          ],
-        ),
+            child: Text(
+              _securityEnabled
+                  ? 'Authentication is enabled. You will be prompted to authenticate when opening the app.'
+                  : 'Authentication is disabled. The app will open without authentication.',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Colors.white70
+                    : Colors.black87,
+              ),
+            ),
+          ),
+        ],
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text('Ok'),
+          child: const Text('Close'),
         ),
         // ElevatedButton(
         //   onPressed: _isPinSet ? _changePin : _setupPin,
