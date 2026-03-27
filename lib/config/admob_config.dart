@@ -1,34 +1,25 @@
 /// AdMob configuration for Password Manager app
-/// 
-/// This file contains Ad Unit IDs for Google Mobile Ads integration.
-/// Replace test IDs with your real Ad Unit IDs from Google AdMob console before publishing.
+///
+/// Returns the correct ad unit ID depending on build mode.
+/// - In debug builds the official test ad unit is used (safe for development).
+/// - In release builds the production ad unit is returned (set to your real ID).
+
+import 'package:flutter/foundation.dart';
 
 class AdmobConfig {
-  // ─────────────────────────────────────────────────────────────────────────
-  // TEST ADS (Safe for development & testing)
-  // ─────────────────────────────────────────────────────────────────────────
-  
-  /// Test Banner Ad Unit ID for Android
-  /// Safe to use during development without getting disabled
+  // Official Google test Banner Ad Unit ID (safe for development)
   static const String _testBannerAdId =
       'ca-app-pub-3940256099942544/6300978111';
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // ACTIVE AD UNIT IDS (Replace these before publishing)
-  // ─────────────────────────────────────────────────────────────────────────
-  
-  /// Banner ad unit ID - shown at the bottom of password list
-  /// TODO: Replace with your real Ad Unit ID from AdMob console
-  static const String bannerAdUnitId = _testBannerAdId;
-  
-  // To get your Ad Unit IDs:
-  // 1. Go to https://admob.google.com
-  // 2. Sign in with your Google Account
-  // 3. Select your app
-  // 4. In the left menu, go to "Ad Units"
-  // 5. Create a new Banner ad unit or use existing one
-  // 6. Copy the Ad Unit ID and paste it here
-  
-  // Example of how it should look when you add your real ID:
-  // static const String bannerAdUnitId = 'ca-app-pub-xxxxxxxxxxxxxxxx/yyyyyyyyyy';
+  // Production Banner Ad Unit ID (replace with your real ID)
+  static const String _prodBannerAdId =
+      'ca-app-pub-5197112083845726/9146046326';
+
+  /// Banner ad unit ID - selects test id in debug, production id otherwise.
+  static String get bannerAdUnitId => kDebugMode ? _testBannerAdId : _prodBannerAdId;
+
+  // Notes:
+  // - Replace `_prodBannerAdId` with the real Ad Unit ID from AdMob console
+  //   before publishing if it differs from the current value.
+  // - Do NOT include test device registrations in release builds.
 }

@@ -44,6 +44,8 @@ Future<void> main() async {
 }
 
 class MyApp extends StatefulWidget {
+  const MyApp({super.key});
+
   @override
   State<MyApp> createState() => _MyAppState();
 }
@@ -224,28 +226,28 @@ class _HomepageState extends State<Homepage> {
     });
   }
 
-  int _getPasswordStrength(String password) {
-    int strength = 0;
-    if (password.length >= 8) strength++;
-    if (password.length >= 12) strength++;
-    if (password.contains(RegExp(r'[a-z]'))) strength++;
-    if (password.contains(RegExp(r'[A-Z]'))) strength++;
-    if (password.contains(RegExp(r'[0-9]'))) strength++;
-    if (password.contains(RegExp(r'[!@#$%^&*(),.?\":{}|<>]'))) strength++;
-    return strength;
-  }
+  // int _getPasswordStrength(String password) {
+  //   int strength = 0;
+  //   if (password.length >= 8) strength++;
+  //   if (password.length >= 12) strength++;
+  //   if (password.contains(RegExp(r'[a-z]'))) strength++;
+  //   if (password.contains(RegExp(r'[A-Z]'))) strength++;
+  //   if (password.contains(RegExp(r'[0-9]'))) strength++;
+  //   if (password.contains(RegExp(r'[!@#$%^&*(),.?\":{}|<>]'))) strength++;
+  //   return strength;
+  // }
 
-  String _getStrengthLabel(int strength) {
-    if (strength <= 2) return 'Weak';
-    if (strength <= 4) return 'Medium';
-    return 'Strong';
-  }
+  // String _getStrengthLabel(int strength) {
+  //   if (strength <= 2) return 'Weak';
+  //   if (strength <= 4) return 'Medium';
+  //   return 'Strong';
+  // }
 
-  Color _getStrengthColor(int strength) {
-    if (strength <= 2) return Colors.red;
-    if (strength <= 4) return Colors.orange;
-    return Colors.green;
-  }
+  // Color _getStrengthColor(int strength) {
+  //   if (strength <= 2) return Colors.red;
+  //   if (strength <= 4) return Colors.orange;
+  //   return Colors.green;
+  // }
 
   void showSmallTopSnackBar(BuildContext context, String message, Color color) {
     showTopSnackBar(
@@ -669,7 +671,7 @@ class _HomepageState extends State<Homepage> {
   }
 
   // Placeholder - old tile method body removed (now integrated into _tile above)
-  Widget _tile_placeholder_REMOVED() => const SizedBox.shrink();
+  // Widget _tile_placeholder_REMOVED() => const SizedBox.shrink();
 
   Widget _buildPasswordDisplay(dynamic item, bool isDark) {
     try {

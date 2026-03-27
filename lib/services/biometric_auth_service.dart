@@ -1,5 +1,6 @@
 import 'package:local_auth/local_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/foundation.dart';
 
 class BiometricAuthService {
   final LocalAuthentication _localAuth = LocalAuthentication();
@@ -16,9 +17,9 @@ class BiometricAuthService {
   Future<void> initialize() async {
     try {
       _isBiometricAvailable = await canUseBiometric();
-      print('Biometric available: $_isBiometricAvailable');
+      debugPrint('Biometric available: $_isBiometricAvailable');
     } catch (e) {
-      print('Error initializing biometric: $e');
+      debugPrint('Error initializing biometric: $e');
       _isBiometricAvailable = false;
     }
   }
@@ -36,7 +37,7 @@ class BiometricAuthService {
       }
       return false;
     } catch (e) {
-      print('Error checking biometric availability: $e');
+      debugPrint('Error checking biometric availability: $e');
       return false;
     }
   }
@@ -46,7 +47,7 @@ class BiometricAuthService {
     try {
       return await _localAuth.getAvailableBiometrics();
     } catch (e) {
-      print('Error getting available biometrics: $e');
+      debugPrint('Error getting available biometrics: $e');
       return [];
     }
   }
@@ -56,7 +57,7 @@ class BiometricAuthService {
     try {
       final isAvailable = await canUseBiometric();
       if (!isAvailable) {
-        print('Biometric not available');
+        debugPrint('Biometric not available');
         return false;
       }
 
@@ -70,11 +71,11 @@ class BiometricAuthService {
         );
         return authenticated;
       } on Exception catch (e) {
-        print('Biometric authentication error: $e');
+        debugPrint('Biometric authentication error: $e');
         return false;
       }
     } catch (e) {
-      print('Error in biometric authentication: $e');
+      debugPrint('Error in biometric authentication: $e');
       return false;
     }
   }
@@ -84,7 +85,7 @@ class BiometricAuthService {
     try {
       return await _localAuth.isDeviceSupported();
     } catch (e) {
-      print('Error checking device support: $e');
+      debugPrint('Error checking device support: $e');
       return false;
     }
   }
@@ -104,7 +105,7 @@ class BiometricAuthService {
       );
       return authenticated;
     } on Exception catch (e) {
-      print('Device auth error: $e');
+      debugPrint('Device auth error: $e');
       return false;
     }
   }
@@ -114,7 +115,7 @@ class BiometricAuthService {
     try {
       await _secureStorage.delete(key: _pinKey);
     } catch (e) {
-      print('Error removing PIN: $e');
+      debugPrint('Error removing PIN: $e');
     }
   }
 

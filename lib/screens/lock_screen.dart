@@ -40,7 +40,7 @@ class _LockScreenState extends State<LockScreen> {
         });
       }
     } catch (e) {
-      print('Error initializing lock screen: $e');
+      debugPrint('Error initializing lock screen: $e');
       setState(() {
         _canUseDeviceLock = false;
       });
@@ -56,7 +56,7 @@ class _LockScreenState extends State<LockScreen> {
         return;
       }
     } catch (e) {
-      print('Auth error: $e');
+      debugPrint('Auth error: $e');
     }
 
     if (mounted) {

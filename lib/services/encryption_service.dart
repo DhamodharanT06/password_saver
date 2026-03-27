@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/foundation.dart';
 
 class EncryptionService {
   static const String _keyStorageKey = 'encryption_master_key';
@@ -24,7 +25,7 @@ class EncryptionService {
         storedKey = await _secureStorage.read(key: _keyStorageKey);
         storedIv = await _secureStorage.read(key: _ivStorageKey);
       } catch (readError) {
-        print('Error reading keys from secure storage: $readError');
+        debugPrint('Error reading keys from secure storage: $readError');
         throw Exception('Failed to read encryption keys: $readError');
       }
 
@@ -44,7 +45,7 @@ class EncryptionService {
             value: base64.encode(_iv.bytes),
           );
         } catch (generateError, stackTrace) {
-          print('Error generating encryption keys: $generateError\nStack: $stackTrace');
+          debugPrint('Error generating encryption keys: $generateError\nStack: $stackTrace');
           throw Exception('Failed to generate encryption keys: $generateError');
         }
       } else {
@@ -61,12 +62,12 @@ class EncryptionService {
             throw Exception('Invalid IV length: ${_iv.bytes.length} (expected 16)');
           }
         } catch (decodeError, stackTrace) {
-          print('Error loading encryption keys: $decodeError\nStack: $stackTrace');
+          debugPrint('Error loading encryption keys: $decodeError\nStack: $stackTrace');
           throw Exception('Failed to load encryption keys: $decodeError');
         }
       }
     } catch (e, stackTrace) {
-      print('Critical encryption initialization error: $e\nStack: $stackTrace');
+      debugPrint('Critical encryption initialization error: $e\nStack: $stackTrace');
       throw Exception('Failed to initialize encryption: $e');
     }
   }
@@ -92,11 +93,11 @@ class EncryptionService {
         
         return encrypted.base64;
       } catch (encryptError, stackTrace) {
-        print('AES encryption error: $encryptError\nStack: $stackTrace');
+        debugPrint('AES encryption error: $encryptError\nStack: $stackTrace');
         throw Exception('Encryption failed: $encryptError');
       }
     } catch (e, stackTrace) {
-      print('Error encrypting password: $e\nStack: $stackTrace');
+      debugPrint('Error encrypting password: $e\nStack: $stackTrace');
       throw Exception('Encryption failed: $e');
     }
   }
@@ -118,7 +119,7 @@ class EncryptionService {
         
         return decrypted;
       } catch (aesError, stackTrace) {
-        print('AES decryption error: $aesError\nStack: $stackTrace');
+        debugPrint('AES decryption error: $aesError\nStack: $stackTrace');
         // Check if it's a format error
         if (encryptedText.length < 24) {
           throw Exception('Invalid encrypted text format (too short)');
@@ -126,7 +127,7 @@ class EncryptionService {
         throw Exception('Decryption failed: Invalid data or corrupted password');
       }
     } catch (e, stackTrace) {
-      print('Error decrypting password: $e\nStack: $stackTrace');
+      debugPrint('Error decrypting password: $e\nStack: $stackTrace');
       throw Exception('Decryption failed: $e');
     }
   }
@@ -138,17 +139,17 @@ class EncryptionService {
         await _secureStorage.delete(key: _keyStorageKey);
         await _secureStorage.delete(key: _ivStorageKey);
       } catch (deleteError) {
-        print('Error deleting old keys: $deleteError');
+        debugPrint('Error deleting old keys: $deleteError');
       }
       
       try {
         await initialize();
       } catch (initError, stackTrace) {
-        print('Error reinitializing encryption: $initError\nStack: $stackTrace');
+        debugPrint('Error reinitializing encryption: $initError\nStack: $stackTrace');
         throw Exception('Failed to reset encryption - reinitialization failed: $initError');
       }
     } catch (e, stackTrace) {
-      print('Error resetting encryption: $e\nStack: $stackTrace');
+      debugPrint('Error resetting encryption: $e\nStack: $stackTrace');
       throw Exception('Failed to reset encryption: $e');
     }
   }

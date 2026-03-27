@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import '../services/encryption_service.dart';
 import 'add_edit_password_sheet.dart';
 
@@ -55,26 +56,30 @@ class _PasswordDetailPageState extends State<PasswordDetailPage> {
   void _confirmDelete() {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Password?'),
-        content: Text(
-            'Are you sure you want to delete "${_entry['name']}"? This cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Delete Password?'),
+            content: Text(
+              'Are you sure you want to delete "${_entry['name']}"? This cannot be undone.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx); // close dialog
+                  Navigator.pop(context); // close detail page
+                  widget.onDelete(widget.index);
+                },
+                child: const Text(
+                  'Delete',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx); // close dialog
-              Navigator.pop(context); // close detail page
-              widget.onDelete(widget.index);
-            },
-            child:
-                const Text('Delete', style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
     );
   }
 
@@ -111,6 +116,23 @@ class _PasswordDetailPageState extends State<PasswordDetailPage> {
             },
           ),
           IconButton(
+            tooltip: 'Share',
+            icon: const Icon(Icons.share_outlined),
+            onPressed: () {
+              final shareData =
+                  '''${name.isNotEmpty ? 'Name: $name\n' : ''}${email.isNotEmpty ? 'Email: $email\n' : ''}${username.isNotEmpty ? 'Username: $username\n' : ''}Password: ${_decryptedPassword}''';
+              Share.share(shareData, subject: 'Password Details for $name');
+              Clipboard.setData(ClipboardData(text: _decryptedPassword));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Password copied'),
+                  duration: Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+          ),
+          IconButton(
             tooltip: 'Delete',
             icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
             onPressed: _confirmDelete,
@@ -126,18 +148,12 @@ class _PasswordDetailPageState extends State<PasswordDetailPage> {
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    accentTeal.withAlpha(60),
-                    accentTeal.withAlpha(40),
-                  ],
+                  colors: [accentTeal.withAlpha(60), accentTeal.withAlpha(40)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: accentTeal.withAlpha(120),
-                  width: 2,
-                ),
+                border: Border.all(color: accentTeal.withAlpha(120), width: 2),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -257,12 +273,15 @@ class _PasswordDetailPageState extends State<PasswordDetailPage> {
                     children: [
                       Expanded(
                         child: _actionButton(
-                          icon: _showPassword
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
+                          icon:
+                              _showPassword
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
                           label: _showPassword ? 'Hide' : 'Show',
-                          onPressed: () =>
-                              setState(() => _showPassword = !_showPassword),
+                          onPressed:
+                              () => setState(
+                                () => _showPassword = !_showPassword,
+                              ),
                           isDark: isDark,
                           primaryTeal: primaryTeal,
                         ),
@@ -272,8 +291,8 @@ class _PasswordDetailPageState extends State<PasswordDetailPage> {
                         child: _actionButton(
                           icon: Icons.copy_rounded,
                           label: 'Copy',
-                          onPressed: () =>
-                              _copy(_decryptedPassword, 'Password'),
+                          onPressed:
+                              () => _copy(_decryptedPassword, 'Password'),
                           isDark: isDark,
                           primaryTeal: primaryTeal,
                         ),
@@ -420,74 +439,79 @@ class _PasswordDetailPageState extends State<PasswordDetailPage> {
                 primaryTeal: primaryTeal,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: editReasons.reversed
-                      .take(10)
-                      .toList()
-                      .asMap()
-                      .entries
-                      .map<Widget>((entry) {
-                    final r = entry.value;
-                    final isLast =
-                        entry.key == (editReasons.reversed.take(10).length - 1);
-                    return Padding(
-                      padding: EdgeInsets.only(bottom: isLast ? 0 : 12),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Column(
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: accentTeal,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: accentTeal.withAlpha(80),
-                                      blurRadius: 4,
+                  children:
+                      editReasons.reversed
+                          .take(10)
+                          .toList()
+                          .asMap()
+                          .entries
+                          .map<Widget>((entry) {
+                            final r = entry.value;
+                            final isLast =
+                                entry.key ==
+                                (editReasons.reversed.take(10).length - 1);
+                            return Padding(
+                              padding: EdgeInsets.only(bottom: isLast ? 0 : 12),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Column(
+                                    children: [
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          color: accentTeal,
+                                          shape: BoxShape.circle,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: accentTeal.withAlpha(80),
+                                              blurRadius: 4,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (!isLast)
+                                        Container(
+                                          width: 2,
+                                          height: 30,
+                                          color: accentTeal.withAlpha(100),
+                                          margin: const EdgeInsets.only(top: 4),
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          r['reason'] ?? '',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          r['at'] ?? '',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color:
+                                                isDark
+                                                    ? Colors.grey[400]
+                                                    : Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
-                              if (!isLast)
-                                Container(
-                                  width: 2,
-                                  height: 30,
-                                  color: accentTeal.withAlpha(100),
-                                  margin: const EdgeInsets.only(top: 4),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  r['reason'] ?? '',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  r['at'] ?? '',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: isDark
-                                        ? Colors.grey[400]
-                                        : Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
+                            );
+                          })
+                          .toList(),
                 ),
               ),
             ],
@@ -510,10 +534,7 @@ class _PasswordDetailPageState extends State<PasswordDetailPage> {
       decoration: BoxDecoration(
         color: isDark ? Colors.grey[850] : Colors.blue[50],
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: primaryTeal.withAlpha(100),
-          width: 1,
-        ),
+        border: Border.all(color: primaryTeal.withAlpha(100), width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withAlpha(isDark ? 60 : 20),
@@ -535,7 +556,11 @@ class _PasswordDetailPageState extends State<PasswordDetailPage> {
                     color: primaryTeal.withAlpha(100),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(icon, size: 16, color: isDark ? Colors.white : Colors.black),
+                  child: Icon(
+                    icon,
+                    size: 16,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Text(
@@ -543,7 +568,10 @@ class _PasswordDetailPageState extends State<PasswordDetailPage> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: isDark ? Colors.white.withAlpha(200) : Colors.black.withAlpha(200),
+                    color:
+                        isDark
+                            ? Colors.white.withAlpha(200)
+                            : Colors.black.withAlpha(200),
                     letterSpacing: 0.7,
                   ),
                 ),
@@ -574,10 +602,7 @@ class _PasswordDetailPageState extends State<PasswordDetailPage> {
           decoration: BoxDecoration(
             color: primaryTeal.withAlpha(80),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: primaryTeal.withAlpha(150),
-              width: 1.2,
-            ),
+            border: Border.all(color: primaryTeal.withAlpha(150), width: 1.2),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
