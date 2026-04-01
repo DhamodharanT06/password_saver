@@ -893,17 +893,17 @@ class _HomepageState extends State<Homepage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.lock, size: 40, color: Colors.black87),
+                const Icon(Icons.lock, size: 40),
                 const SizedBox(height: 10),
                 const Text('Password Manager',
                     style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.bold,
-                        color: Colors.black87)),
+                        )),
                 const SizedBox(height: 4),
                 Text(
                   '${data.length} password${data.length != 1 ? "s" : ""} saved',
-                  style: const TextStyle(fontSize: 13, color: Colors.black54),
+                  style: const TextStyle(fontSize: 13),
                 ),
               ],
             ),
@@ -913,7 +913,7 @@ class _HomepageState extends State<Homepage> {
             leading: const Icon(Icons.brightness_6),
             title: const Text('Toggle Theme'),
             onTap: () {
-              Navigator.pop(context);
+              // Navigator.pop(context);
               widget.toggleTheme();
             },
           ),
